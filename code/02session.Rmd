@@ -1,0 +1,6 @@
+---
+title: "02session"
+author: "Zoé Wolter, Philipp Bosch, Jens Wiederspohn"
+date: "Dec 09, 2021"
+output: html_document
+---
