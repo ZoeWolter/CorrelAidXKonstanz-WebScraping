@@ -1,3 +1,5 @@
+![CorrelAid X Konstanz Header](https://github.com/ZoeWolter/CorrelAidXKonstanz-WebScraping/blob/main/assets/img/header.png?raw=true)
+
 # CorrelAidXKonstanz - Webscraping mit R
 
 Herzlich Willkommen zu unserem Workshop zur **Webscraping mit R**!
