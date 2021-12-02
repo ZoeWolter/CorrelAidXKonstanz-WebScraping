@@ -33,6 +33,7 @@ pacman::p_load(dplyr,
                polite,
                hrbrthemes,
                forcats,
+               janitor,
                install = TRUE,
                update = FALSE)
 ```

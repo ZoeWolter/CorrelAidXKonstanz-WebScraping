@@ -4,3 +4,124 @@ author: "Zoé Wolter, Philipp Bosch, Jens Wiederspohn"
 date: "Dec 09, 2021"
 output: html_document
 ---
+
+# Grundlegende Struktur
+
+-   Bezug auf letzte Session: (5 Minuten)
+
+    -   Liste an Namen und Ergebnissen für US Wahl
+    -   Nanem bilden Ausgangspunkt für FEC-API
+
+-   Prinzip API (10 Minuten)
+
+    -   GET/POST
+
+-   FEC-API (10 Minuten)
+
+    -   Endpoints und example responses
+    -   Plan: Namen -\> IDs -\> Indep Expenditures
+
+-   Sending requests (30 Minuten)
+
+    -   One to understand structure
+    -   wrap in function to scale
+
+-   Clean results (30 Minuten)
+
+    -   map
+    -   regex
+    -   fail safe
+
+-   Communicate results (15 Minuten)
+
+# Agenda
+- Rückblick auf Zwischenergebnis gestern
+- Einführung API
+- Die FEC-API
+- Kommunikation mit der FEC-API
+- Ergebnisse der FEC-API bereinigen
+- Resultate kommunizieren
+
+
+Zuerst laden wir wieder die benötigten Packages
+```{r}
+source(knitr::purl("packages.Rmd", quiet = TRUE))
+```
+
+Hier noch einmal die Liste an Politikern die wir gestern zuletzt gezogen haben.
+```{r}
+base_url <- "https://en.wikipedia.org/"
+
+polite::bow(url = str_c(base_url, 
+                        "/wiki/List_of_current_members_of_the_United_States_House_of_Representatives")) %>% 
+  polite::scrape() %>% 
+  rvest::html_element(xpath = '//*[@id="votingmembers"]') %>% 
+  rvest::html_table() %>% 
+  janitor::clean_names() -> raw_house_members
+
+raw_house_members %>% 
+  dplyr::select(-party) %>% 
+  dplyr::filter(party_2 == "Republican") %>% 
+  dplyr::rename(party = party_2, age = born_3) %>% 
+  mutate(across(.cols = everything(), ~ stringr::str_squish(.x))) %>% 
+  mutate(across(.cols = everything(), ~ stringr::str_remove_all(.x, pattern = "\\[[0-9]*\\]"))) %>% 
+  mutate(birthday = lubridate::ymd(stringr::str_extract(age, "[0-9]{4}-[0-9]{2}-[0-9]{2}")),
+         assumed_office = as.integer(stringr::str_remove(assumed_office, "\\(special\\)")),
+         member = stringr::str_replace_all(member, c("é" = "e", "í" = "i", 
+                                                     "Mike" = "Michael", 
+                                                     "Jim" = "James",
+                                                     "Bob" = "Robert",
+                                                     "Tom McClintock" = "Thomas McClintock",
+                                                     "Buddy Carter" = "Earl Leroy Carter",
+                                                     "Rick W. Allen" = "Richard Allen",
+                                                     "Randy Feenstra" = "Randall Feenstra",
+                                                     "Hal Rogers" = "Harold Rogers",
+                                                     "Andy Harris" = "Andrew Harris",
+                                                     "Jack Bergman" = "John Bergman",
+                                                     "Bill Huizenga" = "William Huizenga",
+                                                     "Tom Emmer" = "Thomas Emmer",
+                                                     "Tom Reed" = "Thomas Reed",
+                                                     "Ted Budd" = "Theodore Budd",
+                                                     "Chuck Fleischmann" = "Charles Fleischmann",
+                                                     "Mark E. Green" = "Mark Green",
+                                                     "Louie Gohmert" = "Louis Gohmert",
+                                                     "Van Taylor" = "Nicholas Taylor",
+                                                     "Beth Van Duyne" = "Elizabeth van Duyne",
+                                                     "Liz Cheney" = "Elizabeth Cheney")))
+  
+```
+
+
+
+
+```{r}
+
+url <- "https://en.wikipedia.org/wiki/List_of_current_members_of_the_United_States_House_of_Representatives"
+base_url <- "https://en.wikipedia.org/"
+
+
+# polite scraping with the polite package
+session <- polite::bow(url = base_url, user_agent = "Web Data with R - philipp.bosch@uni-konstanz.de")
+years <- seq(2014, 2020, by = 2)
+
+map(.x = years, ~ {
+  nod(session, str_c("wiki/", .x, "_United_States_Senate_elections")) %>% 
+    scrape()
+}) -> results
+
+session %>% 
+  polite::scrape() -> house_html
+
+
+# work with html
+house_html %>%
+  rvest::html_element(xpath = '//*[@id="votingmembers"]') %>% 
+  rvest::html_table() %>% 
+  janitor::clean_names() %>% 
+  dplyr::select(-party) %>% 
+  dplyr::filter(party_2 == "Republican") %>% 
+  dplyr::rename(party = party_2, age = born_3)
+
+
+```
+
