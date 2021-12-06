@@ -35,20 +35,22 @@ output: html_document
 -   Communicate results (15 Minuten)
 
 # Agenda
-- Rückblick auf Zwischenergebnis gestern
-- Einführung API
-- Die FEC-API
-- Kommunikation mit der FEC-API
-- Ergebnisse der FEC-API bereinigen
-- Resultate kommunizieren
 
+-   Rückblick auf Zwischenergebnis gestern
+-   Einführung API
+-   Die FEC-API
+-   Kommunikation mit der FEC-API
+-   Ergebnisse der FEC-API bereinigen
+-   Resultate kommunizieren
 
 Zuerst laden wir wieder die benötigten Packages
+
 ```{r}
 source(knitr::purl("packages.Rmd", quiet = TRUE))
 ```
 
 Hier noch einmal die Liste an Politikern die wir gestern zuletzt gezogen haben.
+
 ```{r}
 base_url <- "https://en.wikipedia.org/"
 
@@ -91,37 +93,152 @@ raw_house_members %>%
   
 ```
 
+Im Endeffekt sind wir vor allem an den Namen der Abgeordneten interessiert. Wir möchten nun nämlich zu den einzelnen Abgeordneten ihre zugehörigen Spenden finden. Das ermöglicht uns die [FEC-API](https://api.open.fec.gov/developers/). Was sind APIs überhaupt?
+
+Eine API (*Application Programming Interface*, de: Schnittstelle zur Programmierung von Anwendungen) ist eine Schnittstelle, die ein System bereitstellt, um anderen Programmen die Interaktion zu ermöglichen.
+
+Eine Interaktion sieht so aus:
+
+1.  Der **Client** macht eine Anfrage (engl. Request) an die API
+2.  Die API verarbeitet die Anfrage und gibt eine Antwort (engl.: **Response**) zurück.
+3.  Der Client verarbeitet die Antwort.
+
+APIs verfügen zumeist über eine **Dokumentation**, die enthält, welche Funktionalitäten verfügbar sind und wie Anfragen gestellt werden müssen.
+
+**Analogie**: Wenn Ihr (als *Client*) im Restaurant seid, stellt Euch das Restaurant eine:n Kellner:in (Eure *API*) und eine Speisekarte (Eure *API-Dokumentation*) bereit. Der:die Kellner:in nimmt Eure Bestellungen (*Anfragen*) entgegen, die Küche verarbeitet diese und der:die Kellner:in bringt Eure Bestellung (*Antwort*).
+
+Die allermeisten APIs heutzutage verwenden das HTTP-Protokoll, welches fünf sogenannte *Methoden* umfasst: GET, POST, PUT, PATCH und DELETE. Da wir in unserem Fall auf Interaktionen schauen, welche sich auf den Datenaustausch fokussieren, ergeben sich folgende Entsprechungen:
+
+-   `GET` --\> Daten lesen
+-   `POST` --\> Neue Daten erstellen
+-   `PUT` --\> Daten ersetzen
+-   `PATCH` --\> Daten aktualisieren
+-   `DELETE` --\> Daten löschen
+
+### GET-Anfragen
+
+Wenn Ihr nur Daten laden möchtet, reicht `GET` meistens aus. Je nach API können allerdings auch `POST` Anfragen notwendig sein. `GET`-Anfragen können als normale URL (das was Ihr in euren Browser eingebt) abgebildet werden. Diese URLs setzen sich aus drei Teilen zusammen: `{BASIS_URL}/{ROUTE}?{QUERY_PARAMETER}`.
+
+Das kennt Ihr zum Beispiel von einer Google-Suche: `https://www.google.com/search?q=CorrelAid`.
+
+-   `BASIS_URL`: `https://www.google.com/`
+
+-   `ROUTE`: `search`
+
+-   `QUERY_PARAMETER`:
+
+    -   `q`: `CorrelAid`
+
+### Statuscodes
+
+Fast alle APIs geben in Ihrer Antwort einen Code zurück, anhand dem man schnell sehen kann, ob die Anfrage erfolgreich war oder nicht. Dieser sogenannte *Statuscode* ist sehr hilfreich, da er Aufschluss gibt, was schief gegangen sein könnte.
+
+Wenn die Anfrage erfolgreich war, gibt die API einen `200` Statuscode zurück. Darüber hinaus gibt es viele Statuscodes, die einen Fehler anzeigen. Häufige Fälle sind:
+
+-   `404`: Nicht gefunden ("Not found"). Z.B. existiert der Endpunkt / die Route gar nicht in der API
+-   `401`: Nicht autorisiert ("Not authorised"): Ihr seid nicht autorisiert auf die API zuzugreifen, z.B. weil Ihr keinen *Token* übergeben habt.
+-   `403`: Nicht erlaubt ("Forbidden"): Ihr seid zwar im Prinzip für die API autorisiert, aber nicht für die Route, auf die ihr zugreifen wollt (z.B. sensitive Daten oder Administration).
+-   `422`: Nicht verarbeitbare Anfrage ("Unprocessable Entity"): Eure Anfrage wurde nicht richtig gestellt
+-   `500`: Interner Server-Fehler ("Internal Server Error"): Eure Anfrage ist zwar richtig gestellt worden, innerhalb der API kam es aber zu einem Fehler
+
+### Beispiel anhand der FEC-API
+
+Die FEC-API stellt einen grafischen "Spielplatz" bereit. Dort können wir Anfragen ausprobieren und diese später in Code übersetzen.
+
+Apropos Code. Für die Kommunikation mit APIs benutzen wir das `httr` package. Dies erlaubt es uns die einzelnen Parameter einer Query einfach zu übergeben. Wie wir die Query aufbauen, können wir einfach Anhand der Query aus der grafischen "Spielwiese" herausfinden:
+
+`https://api.open.fec.gov/v1/names/candidates/?api_key=DEMO_KEY&q=Barry%20Moore%09&q=&q=`
+
+Wir erkennen die Basis der URL und auch den jeweiligen Endpunkt sowie den Key.
+- Base: https://api.open.fec.gov/v1
+- Endpunkt: /names/candidates/
+- ?api_key=DEMO_KEY
+
+Versuchen wir nun einmal selbst die URL zu basteln.
+```{r}
+candidate_endpoint <- "https://api.open.fec.gov/v1/candidates/search/"
+
+# die einzelnen Parameter übergeben wir als Objekte einer Liste
+# zuerst sollten wir jedoch unseren Key einlesen
+
+fec_key <- read_lines(here::here("fec_key.txt"))
+
+# nun die query Liste
+query <- list(page = 1, name = "Jerry Carl", api_key = fec_key,
+              election_year = 2020, office = "H")
+```
 
 
+Nun lassen wir die Magic von `httr` wirken!
+```{r}
+# Aufbau der URL
+fec_url <- httr::modify_url(url = candidate_endpoint, query = query)
+
+# Ziehen der Informationen
+
+jerry_carl_fec <- httr::GET(fec_url)
+```
+
+Schaut euch mal den Status Code an, sind das gute Neuigkeiten? 
+
+
+Nun wollen wir dieses Ungetüm einer Liste aber auch auswerten. Sehr oft hilft es,
+sich durch ein bisschen click & go einen Überblick zu verschaffen.
 
 ```{r}
+jerry_carl_fec %>%
+  # wir greifen auf den content der response zu und geben sie als Text aus
+    httr::content(as = "text", encoding = "UTF-8") %>%
+  # nun convertieren wir von JSON zu einer R-Liste
+    jsonlite::fromJSON() %>% 
+  # wir ziehen uns nur die Informationen aus "results"
+    purrr::pluck("results") %>% 
+  # nun begrenzen wir den dataframe auf die zwei Variablen die uns Interessieren
+    dplyr::select(candidate_id, name) %>% 
+    tidyr::tibble()
+```
 
-url <- "https://en.wikipedia.org/wiki/List_of_current_members_of_the_United_States_House_of_Representatives"
-base_url <- "https://en.wikipedia.org/"
+### Hands On!
+
+Versucht nun einmal selbst die Candidate ID der Kandidatin "Lauren Boebert" herauszufinden
+
+```{r}
+### key einlesen
 
 
-# polite scraping with the polite package
-session <- polite::bow(url = base_url, user_agent = "Web Data with R - philipp.bosch@uni-konstanz.de")
-years <- seq(2014, 2020, by = 2)
 
-map(.x = years, ~ {
-  nod(session, str_c("wiki/", .x, "_United_States_Senate_elections")) %>% 
-    scrape()
-}) -> results
-
-session %>% 
-  polite::scrape() -> house_html
+### query aufbauen
 
 
-# work with html
-house_html %>%
-  rvest::html_element(xpath = '//*[@id="votingmembers"]') %>% 
-  rvest::html_table() %>% 
-  janitor::clean_names() %>% 
-  dplyr::select(-party) %>% 
-  dplyr::filter(party_2 == "Republican") %>% 
-  dplyr::rename(party = party_2, age = born_3)
 
+
+### anhand von query die URL bauen
+
+
+
+
+### Informationen ziehen
+```
+
+Objekt von der FEC-API verarbeiten
+```{r}
 
 ```
 
+Zusatzaufgabe! Findet jemand heraus, wie viele Calls wir in dieser Stunde noch
+an die API richten dürfen? Tipp: Schaut euch mal die "headers" der response an.
+
+
+Forsetzung:
+
+- Scaaaale it up! -> get em all
+
+Anhand von ID die Independent Expenditures ziehen (für einen)
+
+- Scaaaaale it up! -> get em all
+
+Hinzufügen zu objector df
+
+Visualisierung
+
+-> Ausblick mit race classification

@@ -1,21 +1,8 @@
----
-title: "packages"
-author: "Zoé Wolter, Philipp Bosch, Jens Wiederspohn"
-date: "11/26/2021"
-output: html_document
----
-
-# Install and load packages
-
-First install `pacman` if not already installed
-
-```{r}
+## ----------------------------------------------------------------------------------------------
 suppressWarnings(if (!require("pacman")) install.packages("pacman"))
-```
 
-Load packages and install if not installed
 
-```{r}
+## ----------------------------------------------------------------------------------------------
 pacman::p_load(dplyr,
                magrittr,
                purrr,
@@ -37,10 +24,9 @@ pacman::p_load(dplyr,
                here,
                install = TRUE,
                update = FALSE)
-```
 
-Show loaded packages
-```{r}
+
+## ----------------------------------------------------------------------------------------------
 cat("loaded packages\n")
 print(pacman::p_loaded())
-```
+
