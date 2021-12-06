@@ -5,38 +5,37 @@ date: "Dec 07, 2021"
 output: html_document
 ---
 
+# AGENDA
+
+- Intro: Was ist Web Scraping überhaupt?
+- Einführung in das Projekt für den Workshop
+- Download von HTMLs
+- Extrahieren von Informationen aus den HTMLs
+
+# Intro: Was ist Web Scraping überhaupt?
+
+# Unser Ziel
+
 # Packages laden
 
+Zuerst (installieren und) laden wir alle Packages, die wir heute und am zweiten Workshop-Tag benötigen: 
 ```{r}
-# install pacman package if not installed 
-suppressWarnings(if (!require("pacman")) install.packages("pacman"))
-
-# load packages and install if not installed 
-pacman::p_load(tidyverse,
-               polite,
-               rvest,
-               install = TRUE,
-               update = FALSE)
-
-# show loaded packages
-cat("loaded packages\n")
-print(pacman::p_loaded())
+source(knitr::purl("packages.Rmd", quiet = TRUE))
 ```
 
 # Election Results
 
-## Assign URL
+## URL
 
 Zuerst suchen wir uns die URL, von der wir uns die Daten ziehen wollen. Diese speichern wir für die weitere Bearbeitung in einem Vektor: 
 
 ```{r}
-# assign url 
 wiki_url <- 'https://en.wikipedia.org/wiki/2020_United_States_House_of_Representatives_elections'
 ```
 
-## Ask for permission
+## Be polite
 
-Bevor wir mit dem eigentlichen Scraping beginnen, sollten wir der Website einige Informationen über uns durch den User-Agent übergeben und uns über mögliche Einschränkungen von Scraping durch die Website informieren. Dafür gibt es verschiedene Möglichkeiten, sehr einfach geht es beispielsweise mit dem `polite`-Package:
+Bevor wir mit dem eigentlichen Scraping beginnen, sollten wir der Website einige Informationen über uns durch den User-Agent übergeben und uns über mögliche Einschränkungen durch die Website informieren. Dafür gibt es verschiedene Möglichkeiten, sehr einfach geht es beispielsweise mit dem `polite`-Package:
 
 ```{r}
 polite::bow(url = wiki_url, 
@@ -45,20 +44,56 @@ polite::bow(url = wiki_url,
 
 Hier bekommen wir zwei sehr wichtige Informationen: 
 
-- Crawl delay 5 Sek
+- Crawl-Delay: 5 Sekunden
 - Wir drüfen scrapen!
 
 ## Scraping Wikipedia: htmls downloaden
 
-Nachdem wir die Website über uns informiert haben und wir wissen, dass wir die Wikipedia-Seite auch scrapen dürfen, können wir damit jetzt endlich loslegen: Wir laden uns die html-Seite als Liste von <head> und <body> in R!
+Nachdem wir die Website über uns informiert haben und wir wissen, dass wir die Wikipedia-Seite auch scrapen dürfen, können wir damit jetzt endlich loslegen: Wir laden uns die html-Seite (als Liste von <head> und <body>) in R!
 
 ```{r}
-# download html from url 
 wiki_session %>% 
   polite::scrape() -> wiki_html
 ```
 
+Da sich - besonders bei Wikipedia-Seiten - die html-Struktur zeitnah verändern kann, ist es best practice, die html-Dateien zu downloaden und zu speichern. So läuft unser Code auch noch, wenn die Seite sich online schon wieder verändert hat. 
+
+```{r}
+# create directory to store the htmls
+if (!dir.exists(here::here('assets', 'htmls'))) {
+  dir.create(here::here('assets', 'htmls'))
+}
+
+# function to download htmls
+download_html <- function(url, filename) {
+  polite::nod(wiki_session, url) %>%
+    polite::rip(destfile = filename,
+               path = here::here('assets', 'htmls'),
+               overwrite = TRUE)
+  }
+
+# call function to download html 
+download_html(wiki_url, 'election.html')
+```
+
+Hinweis: So wahnsinnig viel Sinn ergibt es hier nicht, eine Funktion für den Download zu schreiben. Die bekommt erst dadurch so richtig Power, wenn wir sie auf eine Liste an URLs anwenden mit `purrr::map()`!
+
 ## XPath: Daten extrahieren
+
+Jetzt haben wir zwar die html, so irre viel können wir bisher aber leider auch noch nicht damit anfangen... Wir brauchen nur die für uns relevanten Daten, hier die Tabelle. Um an die Tabelle zu kommen, können wir mit **XPath** arbeiten!
+
+
+## Datenbereinigung
+
+Inzwischen haben wir zwar den Teil der html-Seite, die uns interessiert - aber noch nicht in einer brauchbaren Form für weitere Analysen. Daher once again: Datenbereinigung! 
+
+
+## Datensatz speichern
+Und schön ist der Datensatz und soll daher auch gespeichert werden - wir wollen das Skript fürs Scrapen ja nicht vor jeder Analyse durchlaufen lassen müssen, sondern können dann direkt einfach den Datensatz laden und haben dann auch keine Probleme, falls sich die Website verändert und unser wunderbares Scraping-Skript nicht mehr durchlaufen will...
+
+
+
+###########################################################################################################################################
 
 ```{r}
 wiki_html %>% 
