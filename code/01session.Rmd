@@ -4,3 +4,288 @@ author: "Zoé Wolter, Philipp Bosch, Jens Wiederspohn"
 date: "Dec 07, 2021"
 output: html_document
 ---
+
+# Packages laden
+
+```{r}
+# install pacman package if not installed 
+suppressWarnings(if (!require("pacman")) install.packages("pacman"))
+
+# load packages and install if not installed 
+pacman::p_load(tidyverse,
+               polite,
+               rvest,
+               install = TRUE,
+               update = FALSE)
+
+# show loaded packages
+cat("loaded packages\n")
+print(pacman::p_loaded())
+```
+
+# Election Results
+
+## Assign URL
+
+Zuerst suchen wir uns die URL, von der wir uns die Daten ziehen wollen. Diese speichern wir für die weitere Bearbeitung in einem Vektor: 
+
+```{r}
+# assign url 
+wiki_url <- 'https://en.wikipedia.org/wiki/2020_United_States_House_of_Representatives_elections'
+```
+
+## Ask for permission
+
+Bevor wir mit dem eigentlichen Scraping beginnen, sollten wir der Website einige Informationen über uns durch den User-Agent übergeben und uns über mögliche Einschränkungen von Scraping durch die Website informieren. Dafür gibt es verschiedene Möglichkeiten, sehr einfach geht es beispielsweise mit dem `polite`-Package:
+
+```{r}
+polite::bow(url = wiki_url, 
+            user_agent = "Workshop Web Data Collection - zoe.wolter@uni-konstanz.de") -> wiki_session
+```
+
+Hier bekommen wir zwei sehr wichtige Informationen: 
+
+- Crawl delay 5 Sek
+- Wir drüfen scrapen!
+
+## Scraping Wikipedia: htmls downloaden
+
+Nachdem wir die Website über uns informiert haben und wir wissen, dass wir die Wikipedia-Seite auch scrapen dürfen, können wir damit jetzt endlich loslegen: Wir laden uns die html-Seite als Liste von <head> und <body> in R!
+
+```{r}
+# download html from url 
+wiki_session %>% 
+  polite::scrape() -> wiki_html
+```
+
+## XPath: Daten extrahieren
+
+```{r}
+wiki_html %>% 
+  rvest::html_node(xpath = "/html/body/div[3]/div[3]/div[5]/div[1]") %>% 
+  rvest::html_nodes(xpath = "//table") %>%
+  rvest::html_table() %>% 
+  .[c(8,10:59)] -> house_results
+```
+
+```{r}
+house_special <- house_results[1]
+house_regular <- house_results[c(2:51)]
+```
+
+## Datenbereinigung
+
+```{r}
+# Function to extract relevant information from the html tables
+clean_results <- function(list_element){
+  
+  list_element %>% 
+    select(1,4,7) %>% 
+    slice(-1) %>% 
+    rename("results" = 3) %>% 
+    separate(results, into = c("results_keep","rest"), sep = "%") %>% 
+    mutate(second_best = str_extract(rest, "[0-9].\\.[0-9]")) %>% 
+    select(-rest) %>% 
+    separate(results_keep, into = c("name", "party", "pct"), sep = "[()]") %>% 
+    mutate(name = str_remove(name, "Y")) %>% 
+    mutate(across(.cols = everything(), ~ str_squish(.x)),
+           pct = as.numeric(pct)) %>% 
+    filter(party == "Republican")
+  
+}
+```
+
+```{r}
+# call function via map
+house_regular_clean <- map(house_regular, clean_results) 
+
+map2(house_regular_clean, state.abb, bind_cols) %>% 
+  bind_rows() %>% 
+  rename("state_abb" = 7) -> regular_house_df
+```
+
+```{r}
+regular_house_df %>%
+  separate(District, 
+           into = c("text", "num"), 
+           sep = "(?<=[A-Za-z]) (?=[0-9])") %>% 
+  mutate(num = as.numeric(num)) %>% 
+  mutate(state_num = case_when(
+      is.na(num) == TRUE ~ 0,
+      num < 10  ~ 0,
+      TRUE ~ num)) %>% 
+  unite("state_numeric", state_num, num, sep = "") %>% 
+  mutate(state_numeric = str_sub(state_numeric, 1,2)) %>% 
+  mutate(state_numeric = str_replace_all(state_numeric, "N", "0")) %>% 
+  unite("state", state_abb, state_numeric, sep = "") %>% 
+  mutate(rep_adv = pct - as.numeric(second_best)) %>% 
+  mutate(rep_adv = case_when(
+    is.na(second_best) == TRUE ~ pct,
+    TRUE ~ rep_adv)) -> election_results_regular
+```
+
+```{r}
+election_results_df <- election_results_regular %>% 
+  dplyr::mutate(name = stringr::str_remove_all(name, pattern = "\\[[\\s\\S]*\\]"))
+```
+
+```{r}
+election_results_df %>% 
+  group_by(state) %>% 
+  count() %>% 
+  arrange(desc(n))
+```
+
+## Daten speichern
+
+```{r}
+# save as df
+saveRDS(election_results_df, "data/election_results_df.RDS")
+```
+
+# Fotos der Kongressabgeordneten
+
+## Assign URL
+
+```{r}
+url_pictures <- "https://en.wikipedia.org/wiki/List_of_current_members_of_the_United_States_House_of_Representatives"
+```
+
+## Ask for permission
+
+```{r}
+session_pictures <- polite::bow(url = url_pictures, user_agent = "Web Data with R - philipp.bosch@uni-konstanz.de")
+```
+
+## Scraping Wikipedia: htmls downloaden
+
+```{r}
+session_pictures %>% 
+  polite::scrape() -> pictures_html
+```
+
+## Datenbereinigung
+
+```{r}
+# work with html
+pictures_html %>%
+  rvest::html_elements("#votingmembers") %>% 
+  rvest::html_nodes("img") %>% 
+  rvest::html_attr("src") %>% tibble() -> image_links
+```
+
+```{r}
+pictures_html %>%
+  rvest::html_elements("#votingmembers") %>% 
+  rvest::html_table() %>% 
+  purrr::pluck(1) %>%
+  dplyr::select(-3) %>% 
+  dplyr::filter(Member != "VACANT") %>%
+  dplyr::select(Party, District, Member) -> aux_info_pictures
+```
+
+```{r}
+bind_cols(aux_info_pictures, image_links) %>% 
+  rename("url" = 4) -> pictures_df
+```
+
+## API: Facerecognition
+
+```{r}
+# kairos
+
+devtools::install_github('methodds/facerec')
+
+# read in API credentials
+Sys.setenv(kairos_id = read_lines(file = "kairos_key.txt")[1])
+Sys.setenv(kairos_key = read_lines(file = "kairos_key.txt")[2])
+
+library(facerec)
+facerec_init()
+
+pictures_df <- pictures_df %>% 
+  mutate(url = str_c("https:", url),
+         url = str_replace_all(url, "\\d{2}(?=px)", "600")) %>% 
+  filter(Party == "Republican")
+
+prediction_list <- vector(mode = "list", length = length(pictures_df$url))
+
+pb <- progress_bar$new(total = length(pictures_df$url))
+
+# query API with sleep timer for rate limit
+
+for (i in seq_along(pictures_df$url)) {
+  
+  control <- seq(from = 55, to = length(pictures_df$url), by = 55)
+  pb$tick()
+  
+  prediction_list[[i]] <- detect(image = pictures_df$url[i])
+  
+  if (i %in% control) {
+    print("sleepy")
+    Sys.sleep(60)
+    next
+  }
+}
+
+# bind rows to create data frame
+
+bind_rows(prediction_list) %>% 
+  distinct(img_source, .keep_all = T) -> predict_df
+
+# save raw data frame with predictions
+saveRDS(predict_df, file = "Data/Term Paper/predict_df.RDS")
+```
+
+## Daten zusammenfügen und bereinigen
+
+```{r}
+# join wikipedia information with predicted race and gender from kairos
+pictures_df %>% 
+  left_join(predict_df, by = c("url" = "img_source")) %>% 
+  select(face_asian, face_black, face_hispanic, face_white, face_gender_type, 
+         Party, District, Member, url) %>% 
+  rename(gender = "face_gender_type") %>% 
+  pivot_longer(cols = starts_with("face"),
+               names_to = "race") %>%
+  group_by(Member) %>% 
+  slice_max(value) %>% 
+  pivot_wider(names_from = race, values_from = value) %>% 
+  mutate(race = case_when(
+    is.na(face_white) != TRUE ~ "white",
+    is.na(face_hispanic) != TRUE ~ "hispanic",
+    is.na(face_black) != TRUE ~ "black",
+    is.na(face_asian) != TRUE ~ "asian"
+  )) %>% 
+  select(-starts_with("face")) %>% 
+  ungroup() -> race_gender_df
+
+# mutate district variable to prepare for merge
+
+race_gender_df %>%
+  arrange(District) %>% 
+  mutate(District = str_squish(District)) %>% 
+  separate(District, 
+           into = c("text", "num"), 
+           sep = "(?<=[A-Za-z]) (?=[0-9])") %>% 
+  mutate(num = as.numeric(num)) %>% 
+  mutate(state_num = case_when(
+    is.na(num) == TRUE ~ 0,
+    num < 10  ~ 0,
+    TRUE ~ num)) %>% 
+  unite("state_numeric", state_num, num, sep = "") %>% 
+  mutate(state_numeric = str_sub(state_numeric, 1,2)) %>% 
+  mutate(state_numeric = str_replace_all(state_numeric, "N", "0")) %>% 
+  mutate(text = str_remove_all(text, "at-large"),
+         text = str_squish(text)) %>% 
+  left_join(tibble(state.abb, state.name), by = c("text" = "state.name")) %>% 
+  unite("state", state.abb, state_numeric, sep = "") -> race_gender_df
+```
+
+## Daten speichern
+
+```{r}
+# save data frame 
+saveRDS(race_gender_df, file = "data/race_gender_df.RDS")
+```
+
