@@ -1,5 +1,5 @@
 ---
-title: "01session"
+title: "01session-solutions"
 author: "Philipp Bosch & Zoé Wolter"
 date: "Dec 07, 2021"
 output: html_document
@@ -33,6 +33,7 @@ Zuerst (installieren und) laden wir alle Packages, die wir heute und am zweiten 
 ```{r}
 source(knitr::purl("packages.Rmd", quiet = TRUE))
 ```
+
 
 # Election Results
 
@@ -131,7 +132,6 @@ Partei. Alles nützliche Informationen, nur leider so überhaupt nicht tidy!
 Unser Plan ist es nun, die Informationen in drei separate Variablen zu splitten. 
 Dabei benutzen wir [*regular expressions*](https://bookdown.org/rdpeng/rprogdatascience/regular-expressions.html).
 
-
 ```{r}
 # wir wählen unseren Datensatz aus
 congress_elections %>% 
@@ -163,48 +163,48 @@ Ihr seid dran! Den Wikipedia-Artikel zu den US Senatswahlen gibt es natürlich n
 
 ```{r}
 # Base URL
-
+base_url <- 'https://en.wikipedia.org/'
 
 # Polite
-
-
+polite::bow(url = str_c(base_url), 
+            user_agent = "Workshop Web Data Collection - zoe.wolter@uni-konstanz.de") -> session
 
 # HTML herunterladen
-
-
-
+session %>% 
+  polite::nod(str_c('wiki/2018_United_States_Senate_elections')) %>%
+  polite::scrape() -> task_html
 
 # Download HTML mit Hilfe der oben geschriebenen Funktion
-
-
+download_html(str_c(base_url, 'wiki/2018_United_States_Senate_elections'), 
+              'task_wiki.html')
 
 # XPath, um die Tabellen zu extrahieren
+wiki_html %>%
+  rvest::html_element(xpath = '//table[8]') %>% 
+  rvest::html_table() -> task_data1
 
+wiki_html %>%
+  rvest::html_element(xpath = '//table[9]') %>% 
+  rvest::html_table() -> task_data2
 
-
-
-
-
-
-
-# Datenbereinigung 
+# Datenbereinigung @Phil
 # wir wählen unseren Datensatz aus
-
+congress_elections %>% 
   # bereinigen die Variablennamen
-
+  janitor::clean_names() %>% 
   # entfernen der ersten Reihe 
-
-  # und teilen die gewünschte Variable 
-
+  filter(incumbent != "Senator") %>% 
+  # und teilen die Gewünschte Variable 
+  tidyr::separate(col = candidates, sep = "[()]", into = c("name","party", "pct")) %>% 
   # nun bereinigen wir die drei Variablen noch
-
+  dplyr::mutate(name = stringr::str_sub(name, 3)) %>% 
   # löschen aller Zeichen nach %
-  
+  dplyr::mutate(pct = str_extract(string = pct, pattern = ".*%")) -> election_results
   #Voilla wir haben einen sauberen Datensatz!
 
 # Speichern der Datensätze
-
-
+saveRDS(task_data1, file = here::here('data', 'task_data1.RDS'))
+saveRDS(task_data2, file = here::here('data', 'task_data2.RDS'))
 ```
 
 
@@ -274,7 +274,6 @@ results[[1]] %>%
 ```
 
 
-
 ```{r}
 purrr::map2(.x = table_location, .y = results,  ~ {
   rvest::html_element(x = .y, xpath = str_c("/html/body/div[3]/div[3]/div[5]/div[1]/table", "[", .x, "]"))
@@ -319,7 +318,6 @@ clean_election_tables <- function(list_element){
 ```
 
 
-
 Nun können wir einfach diese eigene Funktion für jedes Element in unserer Liste anwenden!
 ```{r}
 map(election_result_list, ~ clean_election_tables(.x)) -> tidy_election_results
@@ -331,18 +329,18 @@ Now it's your turn! Wieder Wikipedia, dieses Mal aber eine andere URL: https://e
 
 ```{r}
 # Base URL
-
+base_url <- "https://en.wikipedia.org/"
 
 # Polite
-
-
+polite::bow(url = str_c(base_url, 
+                        "/wiki/List_of_current_members_of_the_United_States_House_of_Representatives")) %>% 
   # Scraping
-
+  polite::scrape() %>% 
   # Extrahieren der Tabelle
-
-
+  rvest::html_element(xpath = '//*[@id="votingmembers"]') %>% 
+  rvest::html_table() %>% 
   # Verschönern der Namen (Hint: janitor-Package) und Abspeichern in Variable
-
+  janitor::clean_names() -> raw_house_members
 ```
 
 ```{r}
