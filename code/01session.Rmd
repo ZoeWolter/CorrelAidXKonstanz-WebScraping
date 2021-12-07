@@ -147,18 +147,16 @@ congress_elections %>%
   dplyr::mutate(name = stringr::str_sub(name, 3)) %>% 
   # löschen aller Zeichen nach %
   dplyr::mutate(pct = str_extract(string = pct, pattern = ".*%")) -> election_results
-  #Voilla wir haben einen sauberen Datensatz!
+  #Voilà wir haben einen sauberen Datensatz!
 ```
-
 
 
 ## Datensatz speichern
 Und schön ist der Datensatz inzwischen und soll daher auch gespeichert werden - wir wollen das Skript fürs Scrapen ja nicht vor jeder Analyse durchlaufen lassen müssen, sondern können dann direkt einfach den Datensatz laden und haben dann auch keine Probleme, falls sich die Website verändert und unser wunderbares Scraping-Skript nicht mehr durchlaufen will...
 
 ```{r}
-saveRDS(election_results, "data/election_results.RDS")
+saveRDS(election_results, file = here::here('data', 'election_results.RDS'))
 ```
-
 
 # Hands-On
 Ihr seid dran! Den Wikipedia-Artikel zu den US Senatswahlen gibt es natürlich nicht nur für das Jahr 2020, sondern zum Beispiel auch für 2018. Wendet das oben gelernte an, um von dieser [Seite](https://en.wikipedia.org/wiki/2020_United_States_Senate_elections) ebenfalls die beiden Tabellen zu scrapen.
@@ -205,8 +203,8 @@ congress_elections %>%
   #Voilla wir haben einen sauberen Datensatz!
 
 # Speichern der Datensätze
-saveRDS(task_data1, "data/task_data1.RDS")
-saveRDS(task_data2, "data/task_data2.RDS")
+saveRDS(task_data1, file = here::here('data', 'task_data1.RDS'))
+saveRDS(task_data2, file = here::here('data', 'task_data2.RDS'))
 ```
 
 
@@ -328,10 +326,6 @@ map(election_result_list, ~ clean_election_tables(.x)) -> tidy_election_results
 ```
 
 
-
-
-
-
 # Hands-On
 Now it's your turn! Wieder Wikipedia, dieses Mal aber eine andere URL: https://en.wikipedia.org//wiki/List_of_current_members_of_the_United_States_House_of_Representatives.Seht Ihr die Tabelle *Voting members by state*? Nutzt entweder die Untersuchen/Inspect-Funktion im Browser oder Selector Gadget, um Euch den XPath zur Tabelle zu suchen und scraped die Tabelle. Wenn Ihr das alles richtig gemacht hat, läuft der Code im Block darunter durch! Könnt Ihr nachvollziehen, was der Code mit Euren Daten macht?
 
@@ -381,4 +375,6 @@ raw_house_members %>%
                                                      "Van Taylor" = "Nicholas Taylor",
                                                      "Beth Van Duyne" = "Elizabeth van Duyne",
                                                      "Liz Cheney" = "Elizabeth Cheney"))) -> house_members
+
+saveRDS(election_results, file = here::here('data', 'house_members.RDS'))
 ```
