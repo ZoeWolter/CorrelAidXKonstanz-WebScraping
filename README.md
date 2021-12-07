@@ -12,11 +12,11 @@ Herzlich Willkommen zu unserem Workshop zur **Webscraping mit R**!
 ## Workshop
 
 **Tag 1:**
-- Top 1
-- Top 2
-- Top 3
+- Aufbau von HTMLs verstehen
+- Extraktion von Informationen anhand ihrer XPaths
+- Anwenden auf US Wahldaten von Wikipedia
 
 **Tag 2:**
-- Top 1 
-- Top 2
-- Top 3
+- Das Prinzip von APIs 
+- Anwenden auf die FEC API
+- Ergebnisse bereinigen
