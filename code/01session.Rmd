@@ -21,7 +21,11 @@ Bei Web Scraping geht es um das Sammeln von Informationen von Websites, indem ma
 - reproduzierbare und aktualisierbare Datensammlung
 
 # Unser Ziel
-@Phil: Überblick Workshop-Projekt-Ziel
+Heute:
+  - Den Aufbau von HTMLs verstehen
+  - Extraktion von Informationen anhand ihrer XPaths
+  - Anwenden auf Wahldaten aus den USA von Wikipedia
+
 
 # Packages laden
 
@@ -119,33 +123,33 @@ Und schon haben wir die Daten in Tabellenform! Eigentlich gar nicht so viel Code
 
 ## Datenbereinigung
 
-Inzwischen haben wir zwar den Teil der html-Seite, die uns interessiert - aber noch nicht in einer brauchbaren Form für weitere Analysen. Daher once again: Datenbereinigung! @Phil
+Inzwischen haben wir zwar den Teil der html-Seite, die uns interessiert - aber noch nicht in einer brauchbaren Form für weitere Analysen. Daher once again: Datenbereinigung! 
+
+Bei einem Blick auf `congress_elections` fällt uns vor allem die unsauber Variable
+`candidates` auf. Diese enthält nicht nur KandidatInnen sondern auch Wahlergebnis und
+Partei. Alles nützliche Informationen, nur leider so überhaupt nicht tidy! 
+Unser Plan ist es nun, die Informationen in drei separate Variablen zu splitten. 
+Dabei benutzen wir [*regular expressions*](https://bookdown.org/rdpeng/rprogdatascience/regular-expressions.html).
+
 
 ```{r}
-extract_candidate_info <- function(list_element){
-  list_element %>% 
-    map(function(x) tibble(dta = x)) %>%
-    map(function(x) separate(x, col=dta, sep="[()]", into = c("name","party", "pct")) %>%
-          mutate(name = trimws(name),
-                 party = trimws(party))) %>%
-    bind_rows(.id = "frame") %>% 
-    drop_na() %>% 
-    add_count(frame, name = "no_candidates") -> result
-  
-  return(result)
-}
+# wir wählen unseren Datensatz aus
+congress_elections %>% 
+  # bereinigen die Variablennamen
+  janitor::clean_names() %>% 
+  # entfernen der ersten Reihe 
+  filter(incumbent != "Senator") %>% 
+  # entfernen von störenden Wiki-Artefakten
+  mutate(across(everything(),~ str_remove_all(.x,  pattern = "\\[[\\s\\S]*\\]"))) %>% 
+  # und teilen die Gewünschte Variable 
+  tidyr::separate(col = candidates, sep = "[()]", into = c("name","party", "pct")) %>% 
+  # nun bereinigen wir die drei Variablen noch
+  dplyr::mutate(name = stringr::str_sub(name, 3)) %>% 
+  # löschen aller Zeichen nach %
+  dplyr::mutate(pct = str_extract(string = pct, pattern = ".*%")) -> election_results
+  #Voilla wir haben einen sauberen Datensatz!
 ```
 
-```{r}
-congress_elections %>%
-  map(function(x) tibble(dta = x)) %>% 
-  map(function(x) separate(x, col=dta, sep="[()]", into = c("name","party", "pct")) %>% 
-        mutate(name = trimws(name),
-               party = trimws(party))) %>% 
-  bind_rows(.id = "frame") %>% 
-    drop_na() %>% 
-    add_count(frame, name = "no_candidates") %>% View()
-```
 
 
 ## Datensatz speichern
@@ -186,6 +190,19 @@ wiki_html %>%
   rvest::html_table() -> task_data2
 
 # Datenbereinigung @Phil
+# wir wählen unseren Datensatz aus
+congress_elections %>% 
+  # bereinigen die Variablennamen
+  janitor::clean_names() %>% 
+  # entfernen der ersten Reihe 
+  filter(incumbent != "Senator") %>% 
+  # und teilen die Gewünschte Variable 
+  tidyr::separate(col = candidates, sep = "[()]", into = c("name","party", "pct")) %>% 
+  # nun bereinigen wir die drei Variablen noch
+  dplyr::mutate(name = stringr::str_sub(name, 3)) %>% 
+  # löschen aller Zeichen nach %
+  dplyr::mutate(pct = str_extract(string = pct, pattern = ".*%")) -> election_results
+  #Voilla wir haben einen sauberen Datensatz!
 
 # Speichern der Datensätze
 saveRDS(task_data1, "data/task_data1.RDS")
@@ -235,19 +252,88 @@ Leider verändert sich der XPath von Jahr zu Jahr leicht zwischen den Tabellen:
 
 Daher ist das Ziehen der Tabellen über XPath hier ein wenig umständlich - bei vielen anderen Seiten verändert sich das aber zwischen den HTMLs nicht, was das Scrapen dann umso einfacher macht.
 
+Hier hilft uns aber wieder die power von `map`! Genauer gesagt, die Power von `map2()`.
+Unser Problem ist ja folgendes. Wir haben jeweils eine HTML von der wir per XPath
+eine Tabelle extrahieren möchten. Leider ändert sich der XPath aber von Wahl zu Wahl
+(bzw. HTML zu HTML). Die Crux ist es jetzt, R mitzuteilen, für welches HTML wir welchen
+XPath anwenden möchten. Tada: `map2()` betritt die Bühne!
+
+Um das Beispiel noch simpel zu halten, schließen wir die special elections aus.
+
+Im Prinzip funktioniert `map2()` wie `map`. Es erlaubt uns nur eine weitere Liste
+anzugeben, über die wir iterieren können. In diesem Fall eben die einzelnen XPaths
+
+Grundlegenden XPath und variierenden Endung definieren
 ```{r}
-# @Phil XPath
+base_xpath <- "/html/body/div[3]/div[3]/div[5]/div[1]/table"
+table_location <- c(9, 10, 9, 10)
 ```
+
+```{r}
+results[[1]] %>% 
+  rvest::html_element(xpath = str_c("/html/body/div[3]/div[3]/div[5]/div[1]/table", "[", "9", "]")) %>% 
+  rvest::html_table()
+```
+
+
+
+```{r}
+purrr::map2(.x = table_location, .y = results,  ~ {
+  rvest::html_element(x = .y, xpath = str_c("/html/body/div[3]/div[3]/div[5]/div[1]/table", "[", .x, "]"))
+}) -> html_election_tables
+```
+
+Nun können wir wieder die html-Tabellen formatieren lassen
+Dazu bauen bauen wir uns zuerst eine leere Liste, in welcher wir die bearbeiteten
+Datensätze später ablegen. Nun iterieren wir über unsere html-Tabellen und wandeln
+sie in R-Tabellen um. Danach speichern wir sie der Reihe nach in unserer Liste ab.
+```{r}
+election_result_list <- vector("list", length = 4)
+
+for (i in seq_along(html_election_tables)) {
+  html_table(html_election_tables[[i]]) -> election_result_list[[i]]
+}
+```
+
+Somit haben wir nun eine Liste die aus 4 Datensätzen besteht.
 
 Für die Datenbereinigung der Tabellen können wir einfach wieder eine Funktion basteln und diese dann auf alle Tabellen anwenden:
 
+Dazu kopieren wir eigentlich nur den Code den wir für eine Tabelle geschrieben haben 
+und packen ihn in eine Funktion.
+
 ```{r}
-# @Phil Datenbereinigung
+clean_election_tables <- function(list_element){
+  list_element %>% 
+  # bereinigen die Variablennamen
+  janitor::clean_names() %>% 
+  # entfernen der ersten Reihe 
+  filter(incumbent != "Senator") %>% 
+  # entfernen von störenden Wiki-Artefakten
+  mutate(across(everything(),~ str_remove_all(.x,  pattern = "\\[[\\s\\S]*\\]"))) %>% 
+  # und teilen die Gewünschte Variable 
+  tidyr::separate(col = candidates, sep = "[()]", into = c("name","party", "pct")) %>% 
+  # nun bereinigen wir die drei Variablen noch
+  dplyr::mutate(name = stringr::str_sub(name, 3)) %>% 
+  # löschen aller Zeichen nach %
+  dplyr::mutate(pct = str_extract(string = pct, pattern = ".*%")) -> result
+}
 ```
 
 
+
+Nun können wir einfach diese eigene Funktion für jedes Element in unserer Liste anwenden!
+```{r}
+map(election_result_list, ~ clean_election_tables(.x)) -> tidy_election_results
+```
+
+
+
+
+
+
 # Hands-On
-Now it's your turn! Wieder Wikipedia, dieses Mal aber eine andere URL: https://en.wikipedia.org//wiki/List_of_current_members_of_the_United_States_House_of_Representatives.Seht Ihr die Tabelle *Voting members by state*? Nutzt entweder die Untersuchen/Inspect-Funktion im Browser oder Selector Gadget, um Euch den XPath zur Tabelle zu suchen und scaped die Tabelle. Wenn Ihr das alles richtig gemacht hat, läuft der Code im Block darunter durch! Könnt Ihr nachvollziehen, was der Code mit Euren Daten macht?
+Now it's your turn! Wieder Wikipedia, dieses Mal aber eine andere URL: https://en.wikipedia.org//wiki/List_of_current_members_of_the_United_States_House_of_Representatives.Seht Ihr die Tabelle *Voting members by state*? Nutzt entweder die Untersuchen/Inspect-Funktion im Browser oder Selector Gadget, um Euch den XPath zur Tabelle zu suchen und scraped die Tabelle. Wenn Ihr das alles richtig gemacht hat, läuft der Code im Block darunter durch! Könnt Ihr nachvollziehen, was der Code mit Euren Daten macht?
 
 ```{r}
 # Base URL
