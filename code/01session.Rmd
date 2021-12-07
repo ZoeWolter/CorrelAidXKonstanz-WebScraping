@@ -13,8 +13,15 @@ output: html_document
 - Extrahieren von Informationen aus den HTMLs
 
 # Intro: Was ist Web Scraping überhaupt?
+Bei Web Scraping geht es um das Sammeln von Informationen von Websites, indem man diese direkt aus dem HTML Source Code extrahiert. Warum denn aber?
+
+- Daten über Daten
+- kein Copy&Paste mehr
+- Automatisierung der Datensammlung
+- reproduzierbare und aktualisierbare Datensammlung
 
 # Unser Ziel
+@Phil: Überblick Workshop-Projekt-Ziel
 
 # Packages laden
 
@@ -27,32 +34,36 @@ source(knitr::purl("packages.Rmd", quiet = TRUE))
 
 ## URL
 
-Zuerst suchen wir uns die URL, von der wir uns die Daten ziehen wollen. Diese speichern wir für die weitere Bearbeitung in einem Vektor: 
+Zuerst suchen wir uns die URL, von der wir uns die Daten ziehen wollen. Diese speichern wir für die weitere Bearbeitung in einem Vektor. Dafür speichern wir entweder die Base URL (Stamm-URL), von der aus man weitere URLs zusammenbauen kann oder direkt die gesamte URL:
 
 ```{r}
-wiki_url <- 'https://en.wikipedia.org/wiki/2020_United_States_House_of_Representatives_elections'
+base_url <- 'https://en.wikipedia.org/'
+wiki_url <- 'https://en.wikipedia.org/wiki/2020_United_States_Senate_elections'
 ```
+
 
 ## Be polite
 
 Bevor wir mit dem eigentlichen Scraping beginnen, sollten wir der Website einige Informationen über uns durch den User-Agent übergeben und uns über mögliche Einschränkungen durch die Website informieren. Dafür gibt es verschiedene Möglichkeiten, sehr einfach geht es beispielsweise mit dem `polite`-Package:
 
 ```{r}
-polite::bow(url = wiki_url, 
-            user_agent = "Workshop Web Data Collection - zoe.wolter@uni-konstanz.de") -> wiki_session
+polite::bow(url = str_c(base_url), 
+            user_agent = "Workshop Web Data Collection - zoe.wolter@uni-konstanz.de") -> session
 ```
 
 Hier bekommen wir zwei sehr wichtige Informationen: 
 
 - Crawl-Delay: 5 Sekunden
-- Wir drüfen scrapen!
+- Wir dürfen scrapen!
+
 
 ## Scraping Wikipedia: htmls downloaden
 
 Nachdem wir die Website über uns informiert haben und wir wissen, dass wir die Wikipedia-Seite auch scrapen dürfen, können wir damit jetzt endlich loslegen: Wir laden uns die html-Seite (als Liste von <head> und <body>) in R!
 
 ```{r}
-wiki_session %>% 
+session %>% 
+  polite::nod(str_c('wiki/2020_United_States_Senate_elections')) %>%
   polite::scrape() -> wiki_html
 ```
 
@@ -66,261 +77,222 @@ if (!dir.exists(here::here('assets', 'htmls'))) {
 
 # function to download htmls
 download_html <- function(url, filename) {
-  polite::nod(wiki_session, url) %>%
+  polite::nod(session, url) %>%
     polite::rip(destfile = filename,
                path = here::here('assets', 'htmls'),
                overwrite = TRUE)
   }
 
 # call function to download html 
-download_html(wiki_url, 'election.html')
+download_html(str_c(base_url, 'wiki/2020_United_States_Senate_elections'), 'election.html')
 ```
 
 Hinweis: So wahnsinnig viel Sinn ergibt es hier nicht, eine Funktion für den Download zu schreiben. Die bekommt erst dadurch so richtig Power, wenn wir sie auf eine Liste an URLs anwenden mit `purrr::map()`!
 
+
 ## XPath: Daten extrahieren
 
-Jetzt haben wir zwar die html, so irre viel können wir bisher aber leider auch noch nicht damit anfangen... Wir brauchen nur die für uns relevanten Daten, hier die Tabelle. Um an die Tabelle zu kommen, können wir mit **XPath** arbeiten!
+Jetzt haben wir zwar die html, so irre viel können wir bisher aber leider auch noch nicht damit anfangen... Wir brauchen nur die für uns relevanten Daten, hier die Tabelle. Um an die Tabelle zu kommen, können wir mit **XPath** arbeiten! Da XPath zwar sehr nützlich, aber genauso nervig sein kann, gibt es Hilfmittel, damit wir die Pfade nicht selbst basteln müssen: 
+
+- Rechtsklick > Untersuchen/Inspect > HTML Node suchen
+- [Selector Gadget](https://selectorgadget.com/): "SelectorGadget is an open source tool that makes CSS selector generation and discovery on complicated sites a breeze"
+
+Hier die XPaths zu den Tabellen, die uns hier interessieren:
+
+- *Special elections during the preceding Congress*: /html/body/div[3]/div[3]/div[5]/div[1]/table[9]
+- *Elections leading to the next Congress*: /html/body/div[3]/div[3]/div[5]/div[1]/table[10]
+
+```{r}
+wiki_html %>%
+  rvest::html_element(xpath = '//table[9]') %>% 
+  rvest::html_table() -> special_elections
+```
+
+```{r}
+wiki_html %>%
+  rvest::html_element(xpath = '//table[10]') %>% 
+  rvest::html_table() -> congress_elections
+```
+
+Und schon haben wir die Daten in Tabellenform! Eigentlich gar nicht so viel Code, oder?
 
 
 ## Datenbereinigung
 
-Inzwischen haben wir zwar den Teil der html-Seite, die uns interessiert - aber noch nicht in einer brauchbaren Form für weitere Analysen. Daher once again: Datenbereinigung! 
+Inzwischen haben wir zwar den Teil der html-Seite, die uns interessiert - aber noch nicht in einer brauchbaren Form für weitere Analysen. Daher once again: Datenbereinigung! @Phil
+
+```{r}
+extract_candidate_info <- function(list_element){
+  list_element %>% 
+    map(function(x) tibble(dta = x)) %>%
+    map(function(x) separate(x, col=dta, sep="[()]", into = c("name","party", "pct")) %>%
+          mutate(name = trimws(name),
+                 party = trimws(party))) %>%
+    bind_rows(.id = "frame") %>% 
+    drop_na() %>% 
+    add_count(frame, name = "no_candidates") -> result
+  
+  return(result)
+}
+```
+
+```{r}
+congress_elections %>%
+  map(function(x) tibble(dta = x)) %>% 
+  map(function(x) separate(x, col=dta, sep="[()]", into = c("name","party", "pct")) %>% 
+        mutate(name = trimws(name),
+               party = trimws(party))) %>% 
+  bind_rows(.id = "frame") %>% 
+    drop_na() %>% 
+    add_count(frame, name = "no_candidates") %>% View()
+```
 
 
 ## Datensatz speichern
-Und schön ist der Datensatz und soll daher auch gespeichert werden - wir wollen das Skript fürs Scrapen ja nicht vor jeder Analyse durchlaufen lassen müssen, sondern können dann direkt einfach den Datensatz laden und haben dann auch keine Probleme, falls sich die Website verändert und unser wunderbares Scraping-Skript nicht mehr durchlaufen will...
-
-
-
-###########################################################################################################################################
+Und schön ist der Datensatz inzwischen und soll daher auch gespeichert werden - wir wollen das Skript fürs Scrapen ja nicht vor jeder Analyse durchlaufen lassen müssen, sondern können dann direkt einfach den Datensatz laden und haben dann auch keine Probleme, falls sich die Website verändert und unser wunderbares Scraping-Skript nicht mehr durchlaufen will...
 
 ```{r}
-wiki_html %>% 
-  rvest::html_node(xpath = "/html/body/div[3]/div[3]/div[5]/div[1]") %>% 
-  rvest::html_nodes(xpath = "//table") %>%
+saveRDS(election_results, "data/election_results.RDS")
+```
+
+
+# Hands-On
+Ihr seid dran! Den Wikipedia-Artikel zu den US Senatswahlen gibt es natürlich nicht nur für das Jahr 2020, sondern zum Beispiel auch für 2018. Wendet das oben gelernte an, um von dieser [Seite](https://en.wikipedia.org/wiki/2020_United_States_Senate_elections) ebenfalls die beiden Tabellen zu scrapen.
+
+```{r}
+# Base URL
+base_url <- 'https://en.wikipedia.org/'
+
+# Polite
+polite::bow(url = str_c(base_url), 
+            user_agent = "Workshop Web Data Collection - zoe.wolter@uni-konstanz.de") -> session
+
+# HTML herunterladen
+session %>% 
+  polite::nod(str_c('wiki/2018_United_States_Senate_elections')) %>%
+  polite::scrape() -> task_html
+
+# Download HTML mit Hilfe der oben geschriebenen Funktion
+download_html(str_c(base_url, 'wiki/2018_United_States_Senate_elections'), 
+              'task_wiki.html')
+
+# XPath, um die Tabellen zu extrahieren
+wiki_html %>%
+  rvest::html_element(xpath = '//table[8]') %>% 
+  rvest::html_table() -> task_data1
+
+wiki_html %>%
+  rvest::html_element(xpath = '//table[9]') %>% 
+  rvest::html_table() -> task_data2
+
+# Datenbereinigung @Phil
+
+# Speichern der Datensätze
+saveRDS(task_data1, "data/task_data1.RDS")
+saveRDS(task_data2, "data/task_data2.RDS")
+```
+
+
+# Scraping at Scale
+Soo jetzt haben wir die Daten von 2018 und 2020, dann lasst uns doch einmal träumen... Was wäre wenn wir das automatisiert für sehr viele Jahre machen könnten?! Here we go:
+
+```{r}
+# Base URL definieren
+base_url <- 'https://en.wikipedia.org/'
+
+# Be polite
+session <- polite::bow(url = base_url, 
+                       user_agent = 'Workshop Web Data Collection - zoe.wolter@uni-konstanz.de')
+
+# Vektor mit allen Jahren, die wir uns anschauen wollen
+years <- seq(2014, 2020, by = 2)
+
+# Scrapen und Downloaden aller HTML Dateien von diesen Jahren
+# Mit purrr können wir über den Vektor mit den Jahren gehen...
+purrr::map(.x = years, ~ {
+  #...die URL für jedes Jahr zusammenbasteln und uns jeweils auf der Seite anmelden...
+  polite::nod(session, str_c('wiki/', .x, '_United_States_Senate_elections')) %>% 
+    #...die HTML scrapen...
+    polite::scrape()
+  #...und abspeichern!
+}) -> results
+```
+
+Leider verändert sich der XPath von Jahr zu Jahr leicht zwischen den Tabellen:
+
+- 2014:
+  - /html/body/div[3]/div[3]/div[5]/div[1]/table[8]
+  - /html/body/div[3]/div[3]/div[5]/div[1]/table[9]
+- 2016:
+  - gibt es nicht
+  - /html/body/div[3]/div[3]/div[5]/div[1]/table[10]
+- 2018:
+  - /html/body/div[3]/div[3]/div[5]/div[1]/table[8]
+  - /html/body/div[3]/div[3]/div[5]/div[1]/table[9]
+- 2020:
+  - /html/body/div[3]/div[3]/div[5]/div[1]/table[9]
+  - /html/body/div[3]/div[3]/div[5]/div[1]/table[10]
+
+Daher ist das Ziehen der Tabellen über XPath hier ein wenig umständlich - bei vielen anderen Seiten verändert sich das aber zwischen den HTMLs nicht, was das Scrapen dann umso einfacher macht.
+
+```{r}
+# @Phil XPath
+```
+
+Für die Datenbereinigung der Tabellen können wir einfach wieder eine Funktion basteln und diese dann auf alle Tabellen anwenden:
+
+```{r}
+# @Phil Datenbereinigung
+```
+
+
+# Hands-On
+Now it's your turn! Wieder Wikipedia, dieses Mal aber eine andere URL: https://en.wikipedia.org//wiki/List_of_current_members_of_the_United_States_House_of_Representatives.Seht Ihr die Tabelle *Voting members by state*? Nutzt entweder die Untersuchen/Inspect-Funktion im Browser oder Selector Gadget, um Euch den XPath zur Tabelle zu suchen und scaped die Tabelle. Wenn Ihr das alles richtig gemacht hat, läuft der Code im Block darunter durch! Könnt Ihr nachvollziehen, was der Code mit Euren Daten macht?
+
+```{r}
+# Base URL
+base_url <- "https://en.wikipedia.org/"
+
+# Polite
+polite::bow(url = str_c(base_url, 
+                        "/wiki/List_of_current_members_of_the_United_States_House_of_Representatives")) %>% 
+  # Scraping
+  polite::scrape() %>% 
+  # Extrahieren der Tabelle
+  rvest::html_element(xpath = '//*[@id="votingmembers"]') %>% 
   rvest::html_table() %>% 
-  .[c(8,10:59)] -> house_results
+  # Verschönern der Namen (Hint: janitor-Package) und Abspeichern in Variable
+  janitor::clean_names() -> raw_house_members
 ```
 
 ```{r}
-house_special <- house_results[1]
-house_regular <- house_results[c(2:51)]
+raw_house_members %>% 
+  dplyr::select(-party) %>% 
+  dplyr::filter(party_2 == "Republican") %>% 
+  dplyr::rename(party = party_2, age = born_3) %>% 
+  mutate(across(.cols = everything(), ~ stringr::str_squish(.x))) %>% 
+  mutate(across(.cols = everything(), ~ stringr::str_remove_all(.x, pattern = "\\[[0-9]*\\]"))) %>% 
+  mutate(birthday = lubridate::ymd(stringr::str_extract(age, "[0-9]{4}-[0-9]{2}-[0-9]{2}")),
+         assumed_office = as.integer(stringr::str_remove(assumed_office, "\\(special\\)")),
+         member = stringr::str_replace_all(member, c("é" = "e", "í" = "i", 
+                                                     "Mike" = "Michael", 
+                                                     "Jim" = "James",
+                                                     "Bob" = "Robert",
+                                                     "Tom McClintock" = "Thomas McClintock",
+                                                     "Buddy Carter" = "Earl Leroy Carter",
+                                                     "Rick W. Allen" = "Richard Allen",
+                                                     "Randy Feenstra" = "Randall Feenstra",
+                                                     "Hal Rogers" = "Harold Rogers",
+                                                     "Andy Harris" = "Andrew Harris",
+                                                     "Jack Bergman" = "John Bergman",
+                                                     "Bill Huizenga" = "William Huizenga",
+                                                     "Tom Emmer" = "Thomas Emmer",
+                                                     "Tom Reed" = "Thomas Reed",
+                                                     "Ted Budd" = "Theodore Budd",
+                                                     "Chuck Fleischmann" = "Charles Fleischmann",
+                                                     "Mark E. Green" = "Mark Green",
+                                                     "Louie Gohmert" = "Louis Gohmert",
+                                                     "Van Taylor" = "Nicholas Taylor",
+                                                     "Beth Van Duyne" = "Elizabeth van Duyne",
+                                                     "Liz Cheney" = "Elizabeth Cheney"))) -> house_members
 ```
-
-## Datenbereinigung
-
-```{r}
-# Function to extract relevant information from the html tables
-clean_results <- function(list_element){
-  
-  list_element %>% 
-    select(1,4,7) %>% 
-    slice(-1) %>% 
-    rename("results" = 3) %>% 
-    separate(results, into = c("results_keep","rest"), sep = "%") %>% 
-    mutate(second_best = str_extract(rest, "[0-9].\\.[0-9]")) %>% 
-    select(-rest) %>% 
-    separate(results_keep, into = c("name", "party", "pct"), sep = "[()]") %>% 
-    mutate(name = str_remove(name, "Y")) %>% 
-    mutate(across(.cols = everything(), ~ str_squish(.x)),
-           pct = as.numeric(pct)) %>% 
-    filter(party == "Republican")
-  
-}
-```
-
-```{r}
-# call function via map
-house_regular_clean <- map(house_regular, clean_results) 
-
-map2(house_regular_clean, state.abb, bind_cols) %>% 
-  bind_rows() %>% 
-  rename("state_abb" = 7) -> regular_house_df
-```
-
-```{r}
-regular_house_df %>%
-  separate(District, 
-           into = c("text", "num"), 
-           sep = "(?<=[A-Za-z]) (?=[0-9])") %>% 
-  mutate(num = as.numeric(num)) %>% 
-  mutate(state_num = case_when(
-      is.na(num) == TRUE ~ 0,
-      num < 10  ~ 0,
-      TRUE ~ num)) %>% 
-  unite("state_numeric", state_num, num, sep = "") %>% 
-  mutate(state_numeric = str_sub(state_numeric, 1,2)) %>% 
-  mutate(state_numeric = str_replace_all(state_numeric, "N", "0")) %>% 
-  unite("state", state_abb, state_numeric, sep = "") %>% 
-  mutate(rep_adv = pct - as.numeric(second_best)) %>% 
-  mutate(rep_adv = case_when(
-    is.na(second_best) == TRUE ~ pct,
-    TRUE ~ rep_adv)) -> election_results_regular
-```
-
-```{r}
-election_results_df <- election_results_regular %>% 
-  dplyr::mutate(name = stringr::str_remove_all(name, pattern = "\\[[\\s\\S]*\\]"))
-```
-
-```{r}
-election_results_df %>% 
-  group_by(state) %>% 
-  count() %>% 
-  arrange(desc(n))
-```
-
-## Daten speichern
-
-```{r}
-# save as df
-saveRDS(election_results_df, "data/election_results_df.RDS")
-```
-
-# Fotos der Kongressabgeordneten
-
-## Assign URL
-
-```{r}
-url_pictures <- "https://en.wikipedia.org/wiki/List_of_current_members_of_the_United_States_House_of_Representatives"
-```
-
-## Ask for permission
-
-```{r}
-session_pictures <- polite::bow(url = url_pictures, user_agent = "Web Data with R - philipp.bosch@uni-konstanz.de")
-```
-
-## Scraping Wikipedia: htmls downloaden
-
-```{r}
-session_pictures %>% 
-  polite::scrape() -> pictures_html
-```
-
-## Datenbereinigung
-
-```{r}
-# work with html
-pictures_html %>%
-  rvest::html_elements("#votingmembers") %>% 
-  rvest::html_nodes("img") %>% 
-  rvest::html_attr("src") %>% tibble() -> image_links
-```
-
-```{r}
-pictures_html %>%
-  rvest::html_elements("#votingmembers") %>% 
-  rvest::html_table() %>% 
-  purrr::pluck(1) %>%
-  dplyr::select(-3) %>% 
-  dplyr::filter(Member != "VACANT") %>%
-  dplyr::select(Party, District, Member) -> aux_info_pictures
-```
-
-```{r}
-bind_cols(aux_info_pictures, image_links) %>% 
-  rename("url" = 4) -> pictures_df
-```
-
-## API: Facerecognition
-
-```{r}
-# kairos
-
-devtools::install_github('methodds/facerec')
-
-# read in API credentials
-Sys.setenv(kairos_id = read_lines(file = "kairos_key.txt")[1])
-Sys.setenv(kairos_key = read_lines(file = "kairos_key.txt")[2])
-
-library(facerec)
-facerec_init()
-
-pictures_df <- pictures_df %>% 
-  mutate(url = str_c("https:", url),
-         url = str_replace_all(url, "\\d{2}(?=px)", "600")) %>% 
-  filter(Party == "Republican")
-
-prediction_list <- vector(mode = "list", length = length(pictures_df$url))
-
-pb <- progress_bar$new(total = length(pictures_df$url))
-
-# query API with sleep timer for rate limit
-
-for (i in seq_along(pictures_df$url)) {
-  
-  control <- seq(from = 55, to = length(pictures_df$url), by = 55)
-  pb$tick()
-  
-  prediction_list[[i]] <- detect(image = pictures_df$url[i])
-  
-  if (i %in% control) {
-    print("sleepy")
-    Sys.sleep(60)
-    next
-  }
-}
-
-# bind rows to create data frame
-
-bind_rows(prediction_list) %>% 
-  distinct(img_source, .keep_all = T) -> predict_df
-
-# save raw data frame with predictions
-saveRDS(predict_df, file = "Data/Term Paper/predict_df.RDS")
-```
-
-## Daten zusammenfügen und bereinigen
-
-```{r}
-# join wikipedia information with predicted race and gender from kairos
-pictures_df %>% 
-  left_join(predict_df, by = c("url" = "img_source")) %>% 
-  select(face_asian, face_black, face_hispanic, face_white, face_gender_type, 
-         Party, District, Member, url) %>% 
-  rename(gender = "face_gender_type") %>% 
-  pivot_longer(cols = starts_with("face"),
-               names_to = "race") %>%
-  group_by(Member) %>% 
-  slice_max(value) %>% 
-  pivot_wider(names_from = race, values_from = value) %>% 
-  mutate(race = case_when(
-    is.na(face_white) != TRUE ~ "white",
-    is.na(face_hispanic) != TRUE ~ "hispanic",
-    is.na(face_black) != TRUE ~ "black",
-    is.na(face_asian) != TRUE ~ "asian"
-  )) %>% 
-  select(-starts_with("face")) %>% 
-  ungroup() -> race_gender_df
-
-# mutate district variable to prepare for merge
-
-race_gender_df %>%
-  arrange(District) %>% 
-  mutate(District = str_squish(District)) %>% 
-  separate(District, 
-           into = c("text", "num"), 
-           sep = "(?<=[A-Za-z]) (?=[0-9])") %>% 
-  mutate(num = as.numeric(num)) %>% 
-  mutate(state_num = case_when(
-    is.na(num) == TRUE ~ 0,
-    num < 10  ~ 0,
-    TRUE ~ num)) %>% 
-  unite("state_numeric", state_num, num, sep = "") %>% 
-  mutate(state_numeric = str_sub(state_numeric, 1,2)) %>% 
-  mutate(state_numeric = str_replace_all(state_numeric, "N", "0")) %>% 
-  mutate(text = str_remove_all(text, "at-large"),
-         text = str_squish(text)) %>% 
-  left_join(tibble(state.abb, state.name), by = c("text" = "state.name")) %>% 
-  unite("state", state.abb, state_numeric, sep = "") -> race_gender_df
-```
-
-## Daten speichern
-
-```{r}
-# save data frame 
-saveRDS(race_gender_df, file = "data/race_gender_df.RDS")
-```
-
