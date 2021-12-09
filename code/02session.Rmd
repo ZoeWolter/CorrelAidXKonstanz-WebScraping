@@ -93,7 +93,9 @@ raw_house_members %>%
   
 ```
 
-Im Endeffekt sind wir vor allem an den Namen der Abgeordneten interessiert. Wir möchten nun nämlich zu den einzelnen Abgeordneten ihre zugehörigen Spenden finden. Das ermöglicht uns die [FEC-API](https://api.open.fec.gov/developers/). Was sind APIs überhaupt?
+Im Endeffekt sind wir vor allem an den Namen der Abgeordneten interessiert. Wir möchten nun nämlich zu den einzelnen Abgeordneten ihre zugehörigen Spenden finden. Das ermöglicht uns die [FEC-API](https://api.open.fec.gov/developers/). 
+
+Was sind APIs überhaupt?
 
 Eine API (*Application Programming Interface*, de: Schnittstelle zur Programmierung von Anwendungen) ist eine Schnittstelle, die ein System bereitstellt, um anderen Programmen die Interaktion zu ermöglichen.
 
@@ -233,7 +235,7 @@ an die API richten dürfen? Tipp: Schaut euch mal die "headers" der response an.
 
 
 
-## Scaaaale it up! We gotta cacht 'em all!
+## Scaaaale it up! We gotta catch 'em all!
 
 Ihr kennt das Schema, nur für eine ID ist das ganze etwas witzlos. Also same 
 procedure as Tuesday: Wir schreiben eine Funktion und wenden diese per `map()`
@@ -368,7 +370,7 @@ for (i in seq_along(cleaned_candidates_list)) {
 Awesome. Jetzt haben wir jeweils die ID der einzelnen KandidatInnen. Let's talk money!
 Dazu müssen wir erst einmal den richtigen Endpunkt bei der FEC-API finden.
 
-## Inependent Expenditures ziehen
+## Independent Expenditures ziehen
 Wieder gehen wir nach dem selben Prinzip vor. Wir ziehen die Informationen für eine
 ID und bauen danach eine Funktion für alle IDs.
 
@@ -575,7 +577,7 @@ final_df %>%
   group_by(objection) %>% 
   summarise(indep_expend = mean(total))
 ```
-Wir könnten uns auch anschauen welche PACs besonders gerne an Objector spenden.
+Wir könnten uns auch anschauen welche PACs (Variable: committee_name) besonders gerne an Objector spenden.
 
 ```{r}
 final_df %>% 
@@ -597,7 +599,7 @@ Findet den/die Kandidat/in mit den höchsten Einnahmen
 
 ```
 
-Findet den PAC mit den höchsten Ausgaben. Einmal für Objector und einmal für non-objector.
+Findet den PAC (Variable: committee_name) mit den höchsten Ausgaben. Einmal für Objector und einmal für non-objector.
 ```{r}
 
 ```
