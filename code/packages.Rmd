@@ -35,6 +35,7 @@ pacman::p_load(dplyr,
                forcats,
                janitor,
                here,
+               jsonlite,
                install = TRUE,
                update = FALSE)
 ```
